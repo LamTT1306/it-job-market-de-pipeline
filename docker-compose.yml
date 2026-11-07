@@ -1,0 +1,98 @@
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.1-python3.11
+  env_file:
+    - .env
+  environment:
+    - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
+    - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    - AWS_ACCESS_KEY_ID=test
+    - AWS_SECRET_ACCESS_KEY=test
+    - AWS_DEFAULT_REGION=ap-southeast-1
+    - S3_ENDPOINT_URL=http://s3:4566
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/airflow/src
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+  depends_on:
+    postgres:
+      condition: service_healthy
+  networks:
+    - de_network
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: de_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init_dw.sql:/docker-entrypoint-initdb.d/init_dw.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      interval: 5s
+      retries: 5
+    networks:
+      - de_network
+
+  s3:
+    image: localstack/localstack:3.0
+    container_name: de_s3_localstack
+    environment:
+      - SERVICES=s3
+      - DEFAULT_REGION=ap-southeast-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - s3_data:/var/lib/localstack
+    networks:
+      - de_network
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: de_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username $${AIRFLOW_ADMIN_USER} \
+          --firstname Data \
+          --lastname Engineer \
+          --role Admin \
+          --email de_intern@example.com \
+          --password $${AIRFLOW_ADMIN_PASSWORD}
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: de_airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: de_airflow_scheduler
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+networks:
+  de_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  s3_data:

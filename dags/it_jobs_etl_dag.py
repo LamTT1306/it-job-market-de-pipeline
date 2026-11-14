@@ -27,7 +27,7 @@ with DAG(
     dag_id='it_jobs_market_etl_pipeline',
     default_args=default_args,
     description='End-to-End Medallion ETL Pipeline cho dữ liệu tuyển dụng IT',
-    schedule_interval='@daily', # Chạy tự động mỗi ngày 1 lần
+    schedule_interval='@hourly', # Tự động quét dữ liệu mới trên mạng mỗi giờ 1 lần
     start_date=datetime(2026, 1, 1),
     catchup=False,
     tags=['data-engineering', 'medallion', 'etl'],
